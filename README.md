@@ -19,5 +19,11 @@ The training.py would automatically go through the training and testing pipeline
 # Requirment
 Python 3.7
 
+scikit-learn
 
-You may find it in the requirement.txt
+torch 1.11.0
+
+transformer 4.18.0
+
+
+You may find other packages in the requirement.txt
