@@ -2,10 +2,12 @@ from transformers import BertTokenizer, BertModel, BertConfig
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+
 from model.transformer import TransformerBlock
 from model.embedding import BERTEmbedding
 
-Tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
+# Tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
 
 def generate_data(full_dataset):
@@ -22,15 +24,16 @@ class AVEQA(nn.Module):
     def __init__(self, hidden=768, n_layers=12, attn_heads=12, dropout=0.1):
         super(AVEQA, self).__init__()
         self.bert_model = BertModel.from_pretrained("bert-base-uncased")
+        # self.bert_model_contextual = BertModel.from_pretrained("bert-base-uncased")
         self.hidden = hidden
         self.transformer_blocks = nn.ModuleList(
             [TransformerBlock(hidden, attn_heads, hidden * 4, dropout) for _ in
              range(n_layers)])
         self.config = BertConfig.from_pretrained("bert-base-uncased")
         self.classifier = nn.Linear(hidden, 2)
-        self.weight_begin = nn.Linear(128 * hidden, 128)
+        self.weight_begin = nn.Linear(hidden, 1)
         self.weight_end = nn.Linear(hidden * 2, 1)
-        self.projector = nn.Linear(hidden, self.config.vocab_size)
+        self.projector = nn.Linear(hidden, 30522)
         self.softmax = nn.Softmax(dim=1)
         self.embedding = BERTEmbedding(vocab_size=self.config.vocab_size, embed_size=self.hidden)
 
@@ -42,9 +45,15 @@ class AVEQA(nn.Module):
 
         segment_id = torch.ones(input_data['input_ids_msk'].size(), dtype=torch.int)
         x = self.embedding(input_data['input_ids_msk'].to(device), segment_id.to(device))
+
         for transformer in self.transformer_blocks:
             x = transformer.forward(x, input_data['attention_mask_msk'].to(device))
         contextual_output = x.to(device)
+
+        # contextual_output = self.bert_model_contextual(input_ids=input_data['input_ids_msk'].to(device),
+        #                                              token_type_ids=input_data['token_type_ids'].to(device),
+        #                                              attention_mask=input_data['attention_mask_msk'].to(
+        #                                                  device)).last_hidden_state
         no_answer = self.classifier(contextual_output[:, 0, :])
         # no_answer_loss = no_answer_loss_function(no_answer, input_data['answer_label'])
         pred_label = torch.argmax(no_answer, dim=1)
@@ -66,9 +75,23 @@ class AVEQA(nn.Module):
                                    torch.tensor(input_data['msk_index'][have_answer_idx]))
         '''
         all_batch_idx = torch.LongTensor([i for i in range(pred_label.size(0))])
-        begin = self.weight_begin(torch.flatten(contextual_output[all_batch_idx, :, :], start_dim=1))
+        begin = []
+
+        for idx in range(contextual_output.size(0)):
+            begin_weight = self.weight_begin(contextual_output[idx, :, :])
+            begin.append(torch.squeeze(begin_weight).cpu().tolist())
+            # begin_list.append(torch.argmax(torch.squeeze(begin_weight), dim=0))
+        begin = torch.Tensor(begin).to(device)
+        # begin = self.weight_begin(torch.flatten(contextual_output, start_dim=1))
+
         pred_begin_idx = torch.argmax(begin, dim=1)
-        pred_begin_idx += torch.ones(pred_begin_idx.size(0), dtype=torch.long).to(device)
+        # pred_begin_idx = torch.LongTensor(begin_list).to(device)
+        # pred_begin_idx += torch.ones(pred_begin_idx.size(0), dtype=torch.long).to(device)
+        # print('out put complete')
+        # print(contextual_output.size())
+        # print(pred_begin_idx)
+        # print(contextual_output[all_batch_idx, pred_begin_idx, :].size())
+        # print('**************')
         h_b = contextual_output[all_batch_idx, pred_begin_idx, :]
         total = []
         for plus_idx in range(32):
@@ -79,7 +102,10 @@ class AVEQA(nn.Module):
             input_tensor = torch.cat((h_i, h_b), 1)
             total.append(self.weight_end(input_tensor.to(device)).tolist())
         end = torch.squeeze(torch.Tensor(total)).t()
-        pred_end_idx = torch.argmax(end, dim=1)
+        if len(end.size()) < 2:
+            end = torch.unsqueeze(end, dim=0)
+            print(end.size())
+        pred_end_idx = torch.argmax(end, dim=-1)
         end_idx = pred_begin_idx.to(device) + pred_end_idx.to(device)
         pred_end_idx = torch.where(end_idx > 127, 127, end_idx)
 

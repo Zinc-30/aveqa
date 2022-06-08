@@ -1,3 +1,24 @@
+import os
+
+
+def find_gpus(nums=6):
+    os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >~/.tmp_free_gpus')
+    # If there is no ~ in the path, return the path unchanged
+    with open(os.path.expanduser('~/.tmp_free_gpus'), 'r') as lines_txt:
+        frees = lines_txt.readlines()
+        idx_freeMemory_pair = [(idx, int(x.split()[2]))
+                               for idx, x in enumerate(frees)]
+    idx_freeMemory_pair.sort(key=lambda my_tuple: my_tuple[1], reverse=True)
+    usingGPUs = [str(idx_memory_pair[0])
+                 for idx_memory_pair in idx_freeMemory_pair[:nums]]
+    usingGPUs = ','.join(usingGPUs)
+    print('using GPU idx: #', usingGPUs)
+    return usingGPUs
+
+
+os.environ['CUDA_VISIBLE_DEVICES'] = find_gpus(nums=1)
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 import torch
 import argparse
 import random
@@ -94,20 +115,23 @@ def generate_data(full_dataset, eval=False):
     return train_dataset, eval_dataset, test_dataset
 
 
+base_dir = './aveqa_model_1e-6'
+
+
 def start_train(train_set, model):
     training_args = TrainingArguments(
-        output_dir='./aveqa_model',  # 存储结果文件的目录
+        output_dir=base_dir,  # 存储结果文件的目录
         overwrite_output_dir=True,
         max_steps=200000,
-        #max_steps=2000,
+        # max_steps=2000,
         per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
-        learning_rate=1e-5,
+        learning_rate=1e-6,
         # eval_steps=50,
         # load_best_model_at_end=True,
         # metric_for_best_model="f1",  # 最后载入最优模型的评判标准，这里选用precision最高的那个模型参数
-        weight_decay=0.01,
-        warmup_steps=50,
+        #weight_decay=0.0001,
+        #warmup_steps=500,
         # evaluation_strategy="steps",  # 这里设置每100个batch做一次评估，也可以为“epoch”，也就是每个epoch进行一次
         # logging_strategy="steps",
         # save_strategy='steps',
@@ -137,11 +161,11 @@ def start_test(model, test_dataset):
         outputs = model(batch, device)
         temp_dict = {}
         # have_answer_list = outputs['have_answer_idx']
-        gt_begin_idx = outputs['begin_label'].cpu().tolist()
-        gt_end_idx = outputs['end_label'] - outputs['begin_label']
+        gt_begin_idx = outputs['begin_label_ori'].cpu().tolist()
+        gt_end_idx = outputs['end_label_ori'] - outputs['begin_label_ori']
         gt_end_idx = gt_end_idx.cpu().tolist()
-        pred_begin_idx = torch.argmax(outputs['begin_output'], dim=-1).cpu().tolist()
-        pred_end_idx = torch.argmax(outputs['end_output'], dim=-1).cpu().tolist()
+        pred_begin_idx = torch.argmax(outputs['begin_output_ori'], dim=-1).cpu().tolist()
+        pred_end_idx = torch.argmax(outputs['begin_output_ori'], dim=-1).cpu().tolist()
         gt_no_answer = batch['answer_label'].cpu().tolist()
         pred_no_answer = torch.argmax(outputs['no_answer_output'], dim=-1).cpu().tolist()
         for j in range(len(gt_no_answer)):
@@ -152,7 +176,7 @@ def start_test(model, test_dataset):
                 temp_dict[j] = False
                 NA_F += 1
         for i in range(len(gt_begin_idx)):
-            if temp_dict[i]:
+            if temp_dict[i] is True:
                 if int(pred_no_answer[i]) == 1:
                     if gt_begin_idx[i] == pred_begin_idx[i] and gt_end_idx[i] == pred_end_idx[i]:
                         T += 1
@@ -177,8 +201,13 @@ if __name__ == '__main__':
     if mode == 'train':
         model = AVEQA().to(device)
         start_train(train_dataset, model)
+        torch.save(model.bert_model_contextual.state_dict(), base_dir + '/bert_state_dict')
+        model.eval()
+        start_test(model, test_dataset)
     else:
+        base_dir = './aveqa_model_1e-6_64'
         model = AVEQA().to(device)
-        model.load_state_dict(torch.load('./aveqa_model/checkpoint-2000/pytorch_model.bin'))
+        model.load_state_dict(torch.load('./aveqa_model_1e-6_64/checkpoint-200000/pytorch_model.bin'))
+        # model.bert_model_contextual.load_state_dict(torch.load(base_dir + '/bert_state_dict'))
         model.eval()
         start_test(model, test_dataset)
