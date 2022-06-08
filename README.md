@@ -2,10 +2,10 @@
 the reproduction code of the paper "Learning to Extract Attribute Value from Product via Question Answering: A Multi-task Approach"
 
 # Usage
-Use to run the train.py or test.py
-‘’
+Use the following command to run the train.py or test.py
+```
 python train.py --device=cuda
-‘’
+```
 
 
 The model would run in 1 GPU in defualt, to change the setting, change the number in **find_gpus** in **train.py and test.py**
