@@ -1,0 +1,9 @@
+{
+    "dataset": "./dataset/aePub",
+    "model_output_dir": "./aveqa_model_1e-6_64_updated_emb",
+    "learning_rate": 1e-06,
+    "max_steps": 200000,
+    "batch_size": 32,
+    "seed": 0,
+    "test_dataset": "./dataset/testdata"
+}
