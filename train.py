@@ -217,6 +217,6 @@ if __name__ == '__main__':
     torch.save(test_dataset, training_config['test_dataset'])
     model = AVEQA().to(device)
     start_train(train_dataset, model, training_config)
-    torch.save(model.bert_model_contextual.state_dict(), training_config['model_output_dir'] + '/bert_state_dict')
+    # torch.save(model.bert_model_contextual.state_dict(), training_config['model_output_dir'] + '/bert_state_dict')
     model.eval()
     start_test(model, test_dataset)
