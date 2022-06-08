@@ -124,7 +124,7 @@ class AVEQA(nn.Module):
             'begin_output': begin.to(device)[have_answer_list, :],
             'end_output': end.to(device)[have_answer_list, :],
             'no_answer_output': no_answer.to(device),
-            'no_answer_label': input_data['answer_label'],
+            'answer_label': input_data['answer_label'],
             'have_answer_idx': torch.LongTensor(have_answer_list).to(device),
             'bert_output': bert_output.last_hidden_state.to(device),
             'contextual_output': contextual_output.to(device),

@@ -42,6 +42,11 @@ device = args.device
 
 
 class CustomTrainer(Trainer):
+    def __init__(self, **kwargs):
+        super(CustomTrainer, self).__init__(**kwargs)
+        self.training_metric_dict = {'Accuracy': [],
+                                     'NA_Accuracy': []}
+
     def dmlm_loss(self, bert_gt_output, contextual_prediction_output):
         bert_gt_sum = torch.sum(bert_gt_output, dim=-1)
         contextual_prediction_sum = torch.sum(contextual_prediction_output, dim=-1)
@@ -60,7 +65,9 @@ class CustomTrainer(Trainer):
         outputs = model(inputs, device)
         # have_answer_list = outputs['have_answer_idx'].cpu().tolist()
         no_answer_loss = loss_function_na_loss(outputs['no_answer_output'], inputs['answer_label'])
-
+        NA_T, NA_F, T, F = compute_metrics(outputs, 0, 0, 0, 0)
+        self.training_metric_dict['Accuracy'].append(T / (T + F))
+        self.training_metric_dict['NA_Accuracy'].append(NA_T / (NA_T + NA_F))
         dmlm_loss = self.dmlm_loss(outputs['bert_gt_output'],
                                    outputs['contextual_prediction_output'])
 
@@ -179,6 +186,8 @@ def start_train(train_set, model, training_config):
         # callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],  # 早停Callback
     )
     trainer.train()
+    with open('./training_metric.json', 'w') as file:
+        file.write(json.dumps(trainer.training_metric_dict, indent=4))
 
 
 def start_test(model, test_dataset):
