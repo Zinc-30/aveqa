@@ -76,6 +76,6 @@ if __name__ == '__main__':
         testing_config['max_steps']) + '/pytorch_model.bin'
     model = AVEQA().to(device)
     model.load_state_dict(torch.load(model_path))
-    model.bert_model_contextual.load_state_dict(torch.load(testing_config['model_output_dir'] + '/bert_state_dict'))
+    # model.bert_model_contextual.load_state_dict(torch.load(testing_config['model_output_dir'] + '/bert_state_dict'))
     model.eval()
     start_test(model, test_dataset)
