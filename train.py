@@ -206,7 +206,7 @@ def start_train(train_set, model, training_config):
         # callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],  # 早停Callback
     )
     trainer.train()
-    with open('./training_metric.json', 'w') as file:
+    with open(training_config['model_output_dir'] + '/training_metric.json', 'w') as file:
         file.write(json.dumps(trainer.training_metric_dict, indent=4))
 
 
