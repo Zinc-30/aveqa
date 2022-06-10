@@ -153,7 +153,6 @@ def generate_data(full_dataset, eval=False):
         train_dataset, test_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
     return train_dataset, eval_dataset, test_dataset
 
-base_dir = './aveqa_model_1e-6'
 
 def start_train(train_set, model, training_config):
     training_args = TrainingArguments(
@@ -167,7 +166,7 @@ def start_train(train_set, model, training_config):
         # eval_steps=50,
         # load_best_model_at_end=True,
         # metric_for_best_model="f1",  # 最后载入最优模型的评判标准，这里选用precision最高的那个模型参数
-        # weight_decay=0.0001,
+        weight_decay=training_config['weight_decay'],
         # warmup_steps=500,
         # evaluation_strategy="steps",  # 这里设置每100个batch做一次评估，也可以为“epoch”，也就是每个epoch进行一次
         # logging_strategy="steps",
@@ -198,33 +197,6 @@ def start_test(model, test_dataset):
     dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     for i, batch in enumerate(tqdm.tqdm(dataloader)):
         outputs = model(batch, device)
-        temp_dict = {}
-        # have_answer_list = outputs['have_answer_idx']
-        gt_begin_idx = outputs['begin_label_ori'].cpu().tolist()
-        gt_end_idx = outputs['end_label_ori'] - outputs['begin_label_ori']
-        gt_end_idx = gt_end_idx.cpu().tolist()
-        pred_begin_idx = torch.argmax(outputs['begin_output_ori'], dim=-1).cpu().tolist()
-        pred_end_idx = torch.argmax(outputs['begin_output_ori'], dim=-1).cpu().tolist()
-        gt_no_answer = batch['answer_label'].cpu().tolist()
-        pred_no_answer = torch.argmax(outputs['no_answer_output'], dim=-1).cpu().tolist()
-        for j in range(len(gt_no_answer)):
-            if gt_no_answer[j] == pred_no_answer[j]:
-                temp_dict[j] = True
-                NA_T += 1
-            else:
-                temp_dict[j] = False
-                NA_F += 1
-        for i in range(len(gt_begin_idx)):
-            if temp_dict[i] is True:
-                if int(pred_no_answer[i]) == 1:
-                    if gt_begin_idx[i] == pred_begin_idx[i] and gt_end_idx[i] == pred_end_idx[i]:
-                        T += 1
-                    else:
-                        F += 1
-                else:
-                    T += 1
-            else:
-                F += 1
         NA_T, NA_F, T, F = compute_metrics(outputs, NA_T, NA_F, T, F)
 
     print('Accuracy: {}, No Answer Accuracy: {}'.format(T / (T + F), NA_T / (NA_T + NA_F)))
@@ -251,16 +223,9 @@ if __name__ == '__main__':
     # Tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     # dataset = AEPub(dataset_path, Tokenizer)
     train_dataset, _, test_dataset = generate_data(dataset, False)
-    if mode == 'train':
-        model = AVEQA().to(device)
-        start_train(train_dataset, model)
-        torch.save(model.bert_model_contextual.state_dict(), base_dir + '/bert_state_dict')
-        model.eval()
-        start_test(model, test_dataset)
-    else:
-        base_dir = './aveqa_model_1e-6_64'
-        model = AVEQA().to(device)
-        model.load_state_dict(torch.load('./aveqa_model_1e-6_64/checkpoint-200000/pytorch_model.bin'))
-        # model.bert_model_contextual.load_state_dict(torch.load(base_dir + '/bert_state_dict'))
-        model.eval()
-        start_test(model, test_dataset)
+    torch.save(test_dataset, training_config['test_dataset'])
+    model = AVEQA().to(device)
+    start_train(train_dataset, model, training_config)
+    # torch.save(model.bert_model_contextual.state_dict(), training_config['model_output_dir'] + '/bert_state_dict')
+    model.eval()
+    start_test(model, test_dataset)
