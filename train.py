@@ -153,26 +153,8 @@ def generate_data(full_dataset, eval=False):
         train_dataset, test_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
     return train_dataset, eval_dataset, test_dataset
 
-
-<<<<<<< HEAD
 base_dir = './aveqa_model_1e-6'
 
-
-def start_train(train_set, model):
-    training_args = TrainingArguments(
-        output_dir=base_dir,  # 存储结果文件的目录
-        overwrite_output_dir=True,
-        max_steps=200000,
-        # max_steps=2000,
-        per_device_train_batch_size=32,
-        per_device_eval_batch_size=32,
-        learning_rate=1e-6,
-        # eval_steps=50,
-        # load_best_model_at_end=True,
-        # metric_for_best_model="f1",  # 最后载入最优模型的评判标准，这里选用precision最高的那个模型参数
-        #weight_decay=0.0001,
-        #warmup_steps=500,
-=======
 def start_train(train_set, model, training_config):
     training_args = TrainingArguments(
         output_dir=training_config['model_output_dir'],  # 存储结果文件的目录
@@ -187,7 +169,6 @@ def start_train(train_set, model, training_config):
         # metric_for_best_model="f1",  # 最后载入最优模型的评判标准，这里选用precision最高的那个模型参数
         # weight_decay=0.0001,
         # warmup_steps=500,
->>>>>>> 4551a957485020a79d2dfd08557f210b1409fff5
         # evaluation_strategy="steps",  # 这里设置每100个batch做一次评估，也可以为“epoch”，也就是每个epoch进行一次
         # logging_strategy="steps",
         # save_strategy='steps',
@@ -217,7 +198,6 @@ def start_test(model, test_dataset):
     dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     for i, batch in enumerate(tqdm.tqdm(dataloader)):
         outputs = model(batch, device)
-<<<<<<< HEAD
         temp_dict = {}
         # have_answer_list = outputs['have_answer_idx']
         gt_begin_idx = outputs['begin_label_ori'].cpu().tolist()
@@ -245,9 +225,7 @@ def start_test(model, test_dataset):
                     T += 1
             else:
                 F += 1
-=======
         NA_T, NA_F, T, F = compute_metrics(outputs, NA_T, NA_F, T, F)
->>>>>>> 4551a957485020a79d2dfd08557f210b1409fff5
 
     print('Accuracy: {}, No Answer Accuracy: {}'.format(T / (T + F), NA_T / (NA_T + NA_F)))
 
@@ -273,7 +251,6 @@ if __name__ == '__main__':
     # Tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     # dataset = AEPub(dataset_path, Tokenizer)
     train_dataset, _, test_dataset = generate_data(dataset, False)
-<<<<<<< HEAD
     if mode == 'train':
         model = AVEQA().to(device)
         start_train(train_dataset, model)
@@ -287,11 +264,3 @@ if __name__ == '__main__':
         # model.bert_model_contextual.load_state_dict(torch.load(base_dir + '/bert_state_dict'))
         model.eval()
         start_test(model, test_dataset)
-=======
-    torch.save(test_dataset, training_config['test_dataset'])
-    model = AVEQA().to(device)
-    start_train(train_dataset, model, training_config)
-    # torch.save(model.bert_model_contextual.state_dict(), training_config['model_output_dir'] + '/bert_state_dict')
-    model.eval()
-    start_test(model, test_dataset)
->>>>>>> 4551a957485020a79d2dfd08557f210b1409fff5
