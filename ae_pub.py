@@ -23,7 +23,7 @@ class AEPub(Dataset):
         self.begin_label = tup[8]
         self.end_label = tup[9]
         self.attribute_word_label = tup[10]
-        self.encodings = tokenizer(self.text, padding='max_length', truncation=True, max_length=128,
+        self.encodings = tokenizer(self.cat_text, padding='max_length', truncation=True, max_length=128,
                                    return_tensors='pt')
         self.encodings_msk = tokenizer(self.cat_text_msk, padding='max_length', truncation=True, max_length=128,
                                        return_tensors='pt')
