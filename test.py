@@ -32,7 +32,7 @@ def compute_metrics(outputs, NA_T, NA_F, T, F):
     gt_end_idx = outputs['end_label_ori'] - outputs['begin_label_ori']
     gt_end_idx = gt_end_idx.cpu().tolist()
     pred_begin_idx = torch.argmax(outputs['begin_output_ori'], dim=-1).cpu().tolist()
-    pred_end_idx = torch.argmax(outputs['begin_output_ori'], dim=-1).cpu().tolist()
+    pred_end_idx = torch.argmax(outputs['end_output_ori'], dim=-1).cpu().tolist()
     gt_no_answer = outputs['answer_label'].cpu().tolist()
     pred_no_answer = torch.argmax(outputs['no_answer_output'], dim=-1).cpu().tolist()
     for j in range(len(gt_no_answer)):
