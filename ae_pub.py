@@ -1,23 +1,3 @@
-import os
-
-
-def find_gpus(nums=6):
-    os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >~/.tmp_free_gpus')
-    # If there is no ~ in the path, return the path unchanged
-    with open(os.path.expanduser('~/.tmp_free_gpus'), 'r') as lines_txt:
-        frees = lines_txt.readlines()
-        idx_freeMemory_pair = [(idx, int(x.split()[2]))
-                               for idx, x in enumerate(frees)]
-    idx_freeMemory_pair.sort(key=lambda my_tuple: my_tuple[1], reverse=True)
-    usingGPUs = [str(idx_memory_pair[0])
-                 for idx_memory_pair in idx_freeMemory_pair[:nums]]
-    usingGPUs = ','.join(usingGPUs)
-    print('using GPU idx: #', usingGPUs)
-    return usingGPUs
-
-
-os.environ['CUDA_VISIBLE_DEVICES'] = find_gpus(nums=4)
-
 import torch
 import string
 from torch.utils.data import Dataset
@@ -29,9 +9,9 @@ import json
 
 
 class AEPub(Dataset):
-    def __init__(self, dataset_path, tokenizer):
+    def __init__(self, dataset_path, tokenizer, msk):
         super().__init__()
-        _, tup = self.read_txt(dataset_path)
+        _, tup = self.read_txt(dataset_path, msk=msk)
         self.text = tup[0]
         self.cat_text = tup[5]
         self.text_msk = tup[1]
@@ -42,6 +22,7 @@ class AEPub(Dataset):
         self.answer_label = tup[7]
         self.begin_label = tup[8]
         self.end_label = tup[9]
+        self.attribute_word_label = tup[10]
         self.encodings = tokenizer(self.text, padding='max_length', truncation=True, max_length=128,
                                    return_tensors='pt')
         self.encodings_msk = tokenizer(self.cat_text_msk, padding='max_length', truncation=True, max_length=128,
@@ -71,21 +52,25 @@ class AEPub(Dataset):
         item['answer_label'] = self.answer_label[idx]
         item['begin_label'] = self.begin_label[idx]
         item['end_label'] = self.end_label[idx]
+        item['attribute_word_label'] = self.attribute_word_label[idx]
         # item['word_sequence_label_QA'] = self.modified_label[idx]
 
         # print(list(item.keys()))
         return item
 
-    def read_txt(self, dataset_path: str):
+    def read_txt(self, dataset_path: str, msk: str = 'value'):
         dataset, text, text_msk, cat_text_msk, attribute, label, msk_id_list, cat_text = [], [], [], [], [], [], [], []
-        answer_label, begin_label, end_label = [], [], []
+        answer_label, begin_label, end_label, attribute_word_label = [], [], [], []
         max_label = 0
         with open(dataset_path, "rb+") as f:
             for line in f.readlines():
                 byte_line = line.split(b'\x01')
                 str_line = [item.decode('utf-8') for item in byte_line]
                 str_line_word_list = str_line[0].split()
+                attribute_word_list = str_line[1].split()
+                attribute_word_idx = [len(str_line_word_list), len(str_line_word_list) + len(attribute_word_list)]
                 cat_text.append(str_line[0] + ' ' + str_line[1])
+                attribute_word_label.append(attribute_word_idx)
                 if str_line[2].strip() != 'NULL':
                     answer_label.append(1)
                     msk_idx = []
@@ -136,17 +121,22 @@ class AEPub(Dataset):
                     'label': str_line[2].strip(),
                     'msk_idx': '|'.join(msk_idx),
                     'begin_label': b,
-                    'end_label': e
+                    'end_label': e,
+                    'attribute_word_label': attribute_word_idx
                 })
                 text.append(str_line[0])
                 text_msk.append(str_line_word_msk)
-                cat_text_msk.append(str_line_word_msk + ' ' + str_line[1])
+                if msk == 'attribute':
+                    cat_text_msk.append(str_line[0] + ' [MASK]')
+                else:
+                    cat_text_msk.append(str_line_word_msk + ' ' + str_line[1])
                 attribute.append(str_line[1])
                 label.append(str_line[2].strip())
                 msk_id_list.append('|'.join(msk_idx))
         print('Max label len: {}'.format(max_label))
         return dataset, (
-            text, text_msk, attribute, label, msk_id_list, cat_text, cat_text_msk, answer_label, begin_label, end_label)
+            text, text_msk, attribute, label, msk_id_list, cat_text, cat_text_msk, answer_label, begin_label, end_label,
+            attribute_word_label)
 
     def get_index(self, lst=None, item=''):
         return [index for (index, value) in enumerate(lst) if (value in item or item in value) and value != '']
@@ -155,7 +145,7 @@ class AEPub(Dataset):
 if __name__ == '__main__':
     dataset_path = "./dataset/publish_data.txt"
     # ae_pub_dataset, tup = read_txt(dataset_path)
-    Tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    aePub = AEPub(dataset_path, Tokenizer)
-    torch.save(aePub, './dataset/aePub')
+    Tokenizer = BertTokenizer.from_pretrained("deepset/bert-base-cased-squad2")
+    aePub = AEPub(dataset_path, Tokenizer, msk='attribute')
+    torch.save(aePub, './dataset/aePub_squad2')
     print('Finish')

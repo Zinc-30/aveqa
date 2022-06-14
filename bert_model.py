@@ -1,4 +1,4 @@
-from transformers import BertTokenizer, BertModel, BertConfig
+from transformers import BertTokenizer, BertModel, BertConfig, BertForQuestionAnswering
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -21,20 +21,23 @@ def generate_data(full_dataset):
 
 
 class AVEQA(nn.Module):
-    def __init__(self, hidden=768, n_layers=12, attn_heads=12, dropout=0.1):
+    def __init__(self, hidden=768, n_layers=12, attn_heads=12, dropout=0.1, msk='value',
+                 model_name="bert-base-uncased"): #"deepset/bert-base-cased-squad2"
         super(AVEQA, self).__init__()
-        self.bert_model = BertModel.from_pretrained("bert-base-uncased")
-        # self.bert_model_contextual = BertModel.from_pretrained("bert-base-uncased")
+        self.model_name = model_name
+        self.bert_model = BertModel.from_pretrained(self.model_name)
+        self.bert_model_contextual = BertForQuestionAnswering.from_pretrained(self.model_name)
         self.hidden = hidden
         self.transformer_blocks = nn.ModuleList(
             [TransformerBlock(hidden, attn_heads, hidden * 4, dropout) for _ in
              range(n_layers)])
-        self.config = BertConfig.from_pretrained("bert-base-uncased")
+        self.config = BertConfig.from_pretrained(self.model_name)
         self.classifier = nn.Linear(hidden, 2)
         self.weight_begin = nn.Linear(hidden, 1)
         self.weight_end = nn.Linear(hidden * 2, 1)
         self.projector = nn.Linear(hidden, 30522)
         self.softmax = nn.Softmax(dim=1)
+        self.msk = msk
         self.embedding = BERTEmbedding(vocab_size=self.config.vocab_size, embed_size=self.hidden)
 
     def get_index(self, lst=None, item=''):
@@ -115,11 +118,23 @@ class AVEQA(nn.Module):
 
         have_answer_list, msk_index_converted = self.convert_msk_index(input_data['begin_label'],
                                                                        input_data['end_label'])
-        bert_gt = self.flat_output(bert_output.last_hidden_state, have_answer_list, msk_index_converted)
-        contextual_prediction = self.flat_output(contextual_output, have_answer_list, msk_index_converted)
-        bert_gt_output = self.softmax(self.projector(bert_gt.to(device)))
-        contextual_prediction_output = self.softmax(self.projector(contextual_prediction.to(device)))
+        # print(have_answer_list)
+        # print(msk_index_converted)
+        if self.msk == 'attribute' and self.training:
+            msk_index_converted = []
+            for label_idx in input_data['attribute_word_label'].cpu().tolist():
+                msk_index_converted.append([i for i in range(label_idx[0], label_idx[1])])
+            have_answer_list_inp = [i for i in range(pred_label.size(0))]
+            bert_gt = self.flat_output(bert_output.last_hidden_state, have_answer_list_inp, msk_index_converted)
+            contextual_prediction = self.flat_output(contextual_output, have_answer_list_inp, msk_index_converted)
+        else:
+            bert_gt = self.flat_output(bert_output.last_hidden_state, have_answer_list, msk_index_converted)
+            contextual_prediction = self.flat_output(contextual_output, have_answer_list, msk_index_converted)
 
+        bert_gt_output = self.softmax(self.projector(bert_gt.to(device)))
+        # print(bert_gt_output.size())
+        contextual_prediction_output = self.softmax(self.projector(contextual_prediction.to(device)))
+        # print(contextual_prediction_output.size())
         return {
             'begin_output': begin.to(device)[have_answer_list, :],
             'end_output': end.to(device)[have_answer_list, :],
