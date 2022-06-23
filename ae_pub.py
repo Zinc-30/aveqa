@@ -23,10 +23,14 @@ class AEPub(Dataset):
         self.begin_label = tup[8]
         self.end_label = tup[9]
         self.attribute_word_label = tup[10]
+        self.class_label = tup[11]
         self.encodings = tokenizer(self.cat_text, padding='max_length', truncation=True, max_length=128,
                                    return_tensors='pt')
         self.encodings_msk = tokenizer(self.cat_text_msk, padding='max_length', truncation=True, max_length=128,
                                        return_tensors='pt')
+        self.encodings_label = tokenizer(self.label, padding=True, return_tensors='pt')
+
+        # self.text_token = tokenizer.convert_ids_to_tokens(self.encodings['input_ids'])
 
     def __len__(self):
         return len(self.text)
@@ -36,6 +40,9 @@ class AEPub(Dataset):
         item = {key: val[idx] for key, val in self.encodings.items()}
         for key, val in self.encodings_msk.items():
             item[key + '_msk'] = val[idx]
+        for key, val in self.encodings_label.items():
+            item[key + '_label'] = val[idx]
+        # item['text_token'] = self.text_token[idx]
         item['text'] = self.text[idx]
         item['label_word'] = self.label[idx]
         item['cat_text'] = self.cat_text[idx]
@@ -53,6 +60,7 @@ class AEPub(Dataset):
         item['begin_label'] = self.begin_label[idx]
         item['end_label'] = self.end_label[idx]
         item['attribute_word_label'] = self.attribute_word_label[idx]
+        item['class_label'] = self.class_label[idx]
         # item['word_sequence_label_QA'] = self.modified_label[idx]
 
         # print(list(item.keys()))
@@ -61,6 +69,7 @@ class AEPub(Dataset):
     def read_txt(self, dataset_path: str, msk: str = 'value'):
         dataset, text, text_msk, cat_text_msk, attribute, label, msk_id_list, cat_text = [], [], [], [], [], [], [], []
         answer_label, begin_label, end_label, attribute_word_label = [], [], [], []
+        class_label = []
         max_label = 0
         with open(dataset_path, "rb+") as f:
             for line in f.readlines():
@@ -69,12 +78,22 @@ class AEPub(Dataset):
                 str_line_word_list = str_line[0].split()
                 attribute_word_list = str_line[1].split()
                 attribute_word_idx = [len(str_line_word_list), len(str_line_word_list) + len(attribute_word_list)]
-                cat_text.append(str_line[0] + ' ' + str_line[1])
+                cat_text.append(str_line[0] + ' [SEP] ' + str_line[1])
                 attribute_word_label.append(attribute_word_idx)
                 if str_line[2].strip() != 'NULL':
                     answer_label.append(1)
                     msk_idx = []
                     label_words = str_line[2].strip()
+                    if 'brand name' in label_words.lower():
+                        class_label.append(0)
+                    elif 'material' in label_words.lower():
+                        class_label.append(1)
+                    elif 'color' in label_words.lower():
+                        class_label.append(2)
+                    elif 'category' in label_words.lower():
+                        class_label.append(3)
+                    else:
+                        class_label.append(4)
                     idx_candidate = []
                     idx_result = []
                     label_words_list = label_words.split()
@@ -98,6 +117,7 @@ class AEPub(Dataset):
                         msk_idx.append(str(idx_result[0]))
                         str_line_word_list[idx_result[0]] = '[MASK]'
                 else:
+                    class_label.append(5)
                     answer_label.append(0)
                     msk_idx = ['-1']
                 str_line_word_msk = ' '.join(str_line_word_list)
@@ -114,15 +134,16 @@ class AEPub(Dataset):
                 dataset.append({
                     'text': str_line[0],
                     'text_msk': str_line_word_msk,
-                    'cat_text': str_line[0] + ' ' + str_line[1],
-                    'cat_text_msk': str_line_word_msk + ' ' + str_line[1],
+                    'cat_text': str_line[0] + ' [SEP] ' + str_line[1],
+                    'cat_text_msk': str_line_word_msk + ' [SEP] ' + str_line[1],
                     'attribute': str_line[1],
                     'answer_label': answer_label,
                     'label': str_line[2].strip(),
                     'msk_idx': '|'.join(msk_idx),
                     'begin_label': b,
                     'end_label': e,
-                    'attribute_word_label': attribute_word_idx
+                    'attribute_word_label': attribute_word_idx,
+                    'class_label': class_label
                 })
                 text.append(str_line[0])
                 text_msk.append(str_line_word_msk)
@@ -136,7 +157,7 @@ class AEPub(Dataset):
         print('Max label len: {}'.format(max_label))
         return dataset, (
             text, text_msk, attribute, label, msk_id_list, cat_text, cat_text_msk, answer_label, begin_label, end_label,
-            attribute_word_label)
+            attribute_word_label, class_label)
 
     def get_index(self, lst=None, item=''):
         return [index for (index, value) in enumerate(lst) if (value in item or item in value) and value != '']
@@ -145,7 +166,8 @@ class AEPub(Dataset):
 if __name__ == '__main__':
     dataset_path = "./dataset/publish_data.txt"
     # ae_pub_dataset, tup = read_txt(dataset_path)
-    Tokenizer = BertTokenizer.from_pretrained("deepset/bert-base-cased-squad2")
-    aePub = AEPub(dataset_path, Tokenizer, msk='attribute')
-    torch.save(aePub, './dataset/aePub_squad2')
+    # Tokenizer = BertTokenizer.from_pretrained("deepset/bert-base-cased-squad2")
+    Tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    aePub = AEPub(dataset_path, Tokenizer, msk='value')
+    torch.save(aePub, './dataset/aePub')
     print('Finish')
