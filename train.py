@@ -39,6 +39,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str)
 args = parser.parse_args()
 device = args.device
+Tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
 
 class CustomTrainer(Trainer):
@@ -63,9 +64,22 @@ class CustomTrainer(Trainer):
         loss_function_end = nn.CrossEntropyLoss()
         # forward pass
         outputs = model(inputs, device)
+        class_dict = {0: [],  # 'brand name'
+                      1: [],  # 'material'
+                      2: [],  # 'color'
+                      3: [],  # 'category'
+                      4: [],
+                      5: []}
+        gt_dict = {0: [],  # 'brand name'
+                   1: [],  # 'material'
+                   2: [],  # 'color'
+                   3: [],  # 'category'
+                   4: [],
+                   5: []}
         # have_answer_list = outputs['have_answer_idx'].cpu().tolist()
         no_answer_loss = loss_function_na_loss(outputs['no_answer_output'], inputs['answer_label'])
-        NA_T, NA_F, T, F, y_true, y_pred, bad_case_list = compute_metrics(inputs, outputs, 0, 0, 0, 0, [], [], {}, {})
+        NA_T, NA_F, T, F, y_true, y_pred, _ = compute_metrics(inputs, outputs, 0, 0, 0, 0, [], [],
+                                                              class_dict, gt_dict, True)
         self.training_metric_dict['Accuracy'].append(T / (T + F))
         self.training_metric_dict['NA_Accuracy'].append(NA_T / (NA_T + NA_F))
         dmlm_loss = self.dmlm_loss(outputs['bert_gt_output'],
@@ -101,7 +115,17 @@ def compute_metrics_sample(pred):
     }
 
 
-def compute_metrics(inputs, outputs, NA_T, NA_F, T, F, y_true: list, y_pred: list, classfi_dict: dict, gt_dict: dict):
+def process_bad_case(gt_begin_idx, gt_end_idx, pred_begin_idx, pred_end_idx, input_ids, input_ids_label):
+    bad_case_dict = {}
+    bad_case_dict['gt_idx'] = [gt_begin_idx, gt_end_idx]
+    bad_case_dict['pred_idx'] = [pred_begin_idx, pred_end_idx]
+    bad_case_dict['text'] = Tokenizer.decode(input_ids)
+    bad_case_dict['label'] = Tokenizer.decode(input_ids_label)
+    return bad_case_dict
+
+
+def compute_metrics(inputs, outputs, NA_T, NA_F, T, F, y_true: list, y_pred: list, classfi_dict: dict, gt_dict: dict,
+                    train=False):
     bad_case_list = []
     class_label = inputs['class_label'].cpu().tolist()
     input_ids = inputs['input_ids'].cpu().tolist()
@@ -141,20 +165,22 @@ def compute_metrics(inputs, outputs, NA_T, NA_F, T, F, y_true: list, y_pred: lis
                         classfi_dict[k1].append(0)
                         if k1 != int(class_label[i]):
                             gt_dict[k1].append(0)
-                    bad_case_list.append(
-                        process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
-                                         input_ids[i],
-                                         input_ids_label[i]))
+                    if not train:
+                        bad_case_list.append(
+                            process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
+                                             input_ids[i],
+                                             input_ids_label[i]))
                     F += 1
             else:
                 y_pred.append(5)
                 T += 1
         else:
             y_pred.append(5)
-            bad_case_list.append(
-                process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
-                                 input_ids[i],
-                                 input_ids_label[i]))
+            if not train:
+                bad_case_list.append(
+                    process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
+                                     input_ids[i],
+                                     input_ids_label[i]))
             F += 1
     return NA_T, NA_F, T, F, y_true, y_pred, bad_case_list
 

@@ -131,23 +131,23 @@ class AVEQA(nn.Module):
         contextual_prediction_output = self.softmax(self.projector(contextual_prediction.to(device)))
         # print(contextual_prediction_output.size())
         return {
-            'no_answer_output': no_answer.to(device),
-            'answer_label': input_data['answer_label'],
-            'have_answer_idx': torch.LongTensor(have_answer_list).to(device),
-            'bert_output': bert_output.last_hidden_state.to(device),
-            'contextual_output': contextual_output.to(device),
-            'contextual_output_whole': contextual_output_whole,
-            'bert_gt_output': bert_gt_output.to(device),
-            'contextual_prediction_output': contextual_prediction_output.to(device),
-            'begin_label': input_data['begin_label'][have_answer_list].to(device),
-            'end_label': input_data['end_label'][have_answer_list].to(device),
+            'no_answer_output': no_answer.to(device),  #
+            'answer_label': input_data['answer_label'],  #
+            # 'have_answer_idx': torch.LongTensor(have_answer_list).to(device),
+            # 'bert_output': bert_output.last_hidden_state.to(device),
+            # 'contextual_output': contextual_output.to(device),
+            'contextual_output_whole': contextual_output_whole,  #
+            'bert_gt_output': bert_gt_output.to(device),  #
+            'contextual_prediction_output': contextual_prediction_output.to(device),  #
+            # 'begin_label': input_data['begin_label'][have_answer_list].to(device),
+            # 'end_label': input_data['end_label'][have_answer_list].to(device),
             # 'msk_index': input_data['msk_index'],  # 改成length和起始id
-            'pred_begin_idx': answer_start_index.to(device),
-            'pred_end_idx': answer_end_index.to(device),
+            'pred_begin_idx': answer_start_index.to(device),  #
+            'pred_end_idx': answer_end_index.to(device),  #
             # 'begin_label_ori': input_data['begin_label'].to(device),
             # 'end_label_ori': input_data['end_label'].to(device),
-            'begin_label_ori': torch.Tensor(idx_begin).to(device),
-            'end_label_ori': torch.Tensor(idx_end).to(device)
+            'begin_label_ori': torch.Tensor(idx_begin).to(device),  #
+            'end_label_ori': torch.Tensor(idx_end).to(device)  #
         }
 
     # total_loss = qa_loss + alpha * dmlm_loss + beta * no_answer_loss

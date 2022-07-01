@@ -1,9 +1,10 @@
 {
   "dataset": "./dataset/aePub",
-  "model_output_dir": "./aveqa_model_1e-5_64_new_decay_5000",
-  "learning_rate": 1e-5,
-  "weight_decay": 1e-8,
-  "max_steps": 5000,
+  "model_output_dir": "./aveqa_model_1e-6_no_decay",
+  "model_name": "bert-base-uncased",
+  "learning_rate": 1e-6,
+  "weight_decay": 0,
+  "max_steps": 200000,
   "batch_size": 32,
   "seed": 0,
   "test_dataset": "./dataset/testdata"

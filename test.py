@@ -129,17 +129,22 @@ def start_test(model, test_dataset):
                                                                                            NA_T / (NA_T + NA_F),
                                                                                            precision, recall, f1))
 
-    precision_bn, recall_bn, f1_bn, _ = precision_recall_fscore_support(class_dict[0], gt_dict[0])
-    print('Brand name: \n Precision: {}, Recall: {}, F1: {}'.format(precision_bn, recall_bn, f1_bn))
+    precision_bn, recall_bn, f1_bn, _ = precision_recall_fscore_support(class_dict[0], gt_dict[0], average='micro')
+    print(
+        'Len: {}, Brand name: \n Precision: {}, Recall: {}, F1: {}'.format(len(class_dict[0]), precision_bn, recall_bn,
+                                                                           f1_bn))
 
-    precision_m, recall_m, f1_m, _ = precision_recall_fscore_support(class_dict[1], gt_dict[1])
-    print('Material: \n Precision: {}, Recall: {}, F1: {}'.format(precision_m, recall_m, f1_m))
+    precision_m, recall_m, f1_m, _ = precision_recall_fscore_support(class_dict[1], gt_dict[1], average='micro')
+    print('Len: {}, Material: \n Precision: {}, Recall: {}, F1: {}'.format(len(class_dict[1]), precision_m, recall_m,
+                                                                           f1_m))
 
-    precision_c, recall_c, f1_c, _ = precision_recall_fscore_support(class_dict[2], gt_dict[2])
-    print('Color: \n Precision: {}, Recall: {}, F1: {}'.format(precision_c, recall_c, f1_c))
+    precision_c, recall_c, f1_c, _ = precision_recall_fscore_support(class_dict[2], gt_dict[2], average='micro')
+    print(
+        'Len: {}, Color: \n Precision: {}, Recall: {}, F1: {}'.format(len(class_dict[2]), precision_c, recall_c, f1_c))
 
-    precision_ca, recall_ca, f1_ca, _ = precision_recall_fscore_support(class_dict[3], gt_dict[3])
-    print('Category: \n Precision: {}, Recall: {}, F1: {}'.format(precision_ca, recall_ca, f1_ca))
+    precision_ca, recall_ca, f1_ca, _ = precision_recall_fscore_support(class_dict[3], gt_dict[3], average='micro')
+    print('Len: {}, Category: \n Precision: {}, Recall: {}, F1: {}'.format(len(class_dict[3]), precision_ca, recall_ca,
+                                                                           f1_ca))
 
     with open('./bad_case.json', 'w') as file:
         file.write(json.dumps(bad_case_list_total, indent=4))
