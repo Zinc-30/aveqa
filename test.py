@@ -123,7 +123,7 @@ def start_test(model, test_dataset):
         NA_T, NA_F, T, F, y_true, y_pred, bad_case_list = compute_metrics(batch, outputs, NA_T, NA_F, T, F, y_true,
                                                                           y_pred, class_dict, gt_dict)
         bad_case_list_total += bad_case_list
-    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
+    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='weighted')
 
     print('Accuracy: {}, No Answer Accuracy: {}, Precision: {}, Recall: {}, F1: {}'.format(T / (T + F),
                                                                                            NA_T / (NA_T + NA_F),

@@ -164,10 +164,12 @@ class AEPub(Dataset):
 
 
 if __name__ == '__main__':
+    with open('./config.json', 'r') as file:
+        training_config = json.load(file)
     dataset_path = "./dataset/publish_data.txt"
     # ae_pub_dataset, tup = read_txt(dataset_path)
     # Tokenizer = BertTokenizer.from_pretrained("deepset/bert-base-cased-squad2")
-    Tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    Tokenizer = BertTokenizer.from_pretrained(training_config['model_name'])
     aePub = AEPub(dataset_path, Tokenizer, msk='value')
-    torch.save(aePub, './dataset/aePub')
+    torch.save(aePub, training_config['dataset'])
     print('Finish')
