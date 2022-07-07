@@ -29,7 +29,10 @@ class AVEQA(nn.Module):
         self.model_name = model_name
         self.tokenizer = BertTokenizer.from_pretrained(self.model_name)
         self.bert_model = BertModel.from_pretrained(self.model_name)
-        self.bert_model_contextual = BertForQuestionAnswering.from_pretrained(self.model_name)
+        # self.bert_model_contextual = BertForQuestionAnswering.from_pretrained(self.model_name)
+        self.bert_model_contextual = BertModel.from_pretrained(self.model_name)
+        self.wb = nn.Linear(hidden,1)
+        self.we = nn.Linear(2*hidden,1)
         self.hidden = hidden
         self.config = BertConfig.from_pretrained(self.model_name)
         self.classifier = nn.Linear(hidden, 2)
@@ -96,17 +99,52 @@ class AVEQA(nn.Module):
             else:
                 idx_begin.append(129)
                 idx_end.append(129)
-        contextual_output_whole = self.bert_model_contextual(input_ids=input_data['input_ids_msk'].to(device),
+        # contextual_output_whole = self.bert_model_contextual(input_ids=input_data['input_ids_msk'].to(device),
+        #                                                      # token_type_ids=input_data['token_type_ids'].to(device),
+        #                                                      attention_mask=input_data['attention_mask_msk'].to(device),
+        #                                                      start_positions=torch.LongTensor(idx_begin).to(device),
+        #                                                      end_positions=torch.LongTensor(idx_end).to(device),
+        #                                                      output_hidden_states=True)
+        contextual_outputs = self.bert_model_contextual(input_ids=input_data['input_ids_msk'].to(device),
                                                              # token_type_ids=input_data['token_type_ids'].to(device),
-                                                             attention_mask=input_data['attention_mask_msk'].to(device),
-                                                             start_positions=torch.LongTensor(idx_begin).to(device),
-                                                             end_positions=torch.LongTensor(idx_end).to(device),
-                                                             output_hidden_states=True)
-        answer_start_index = contextual_output_whole.start_logits.argmax(dim=-1)
-        answer_end_index = contextual_output_whole.end_logits.argmax(dim=-1)
-        contextual_output = contextual_output_whole.hidden_states[-1]
+                                                             attention_mask=input_data['attention_mask_msk'].to(device))
+        contextual_output = contextual_outputs.last_hidden_state
+
+        # ==== compute qa index ====
+        start_logits  = self.wb(contextual_output)
+        start_logits = start_logits.squeeze(-1).contiguous()
+        answer_start_index = start_logits.argmax(dim=-1)
+
+        # generate start hidden embedding
+        batch_size = contextual_output.size(0)
+        token_size = contextual_output.size(1)
+        emb_size = contextual_output.size(2)
+
+        start_index = answer_start_index.unsqueeze(1).expand(batch_size,token_size)
+        end_contextual_size = [batch_size,token_size,2*emb_size]
+        end_contextual = torch.zeros(end_contextual_size)
+        for batch in range(batch_size):
+            hidden_start = contextual_output[batch,start_index[batch],:]
+            end_contextual[batch] = torch.cat([hidden_start,contextual_output[batch]],dim=-1)
+        
+        end_logits = self.we(end_contextual).squeeze(-1).contiguous()
+        end_mask = torch.zeros(batch_size,token_size).bool()
+        
+        for batch in range(batch_size):
+            for token in range(token_size):
+                if token >= answer_start_index[batch]:
+                    end_mask[batch,token] = True
+
+        answer_end_index = torch.zeros(answer_start_index.size())
+        for batch in range(batch_size):
+            answer_end_index[batch] = token_size - end_mask[batch].sum() + torch.masked_select(end_logits[batch],end_mask[batch]).argmax(dim=-1)
+
+
+        # ==== compute no answer ====
         no_answer = self.classifier(contextual_output[:, 0, :])
         pred_label = torch.argmax(no_answer, dim=1)
+
+        # ==== compute dmlm ====
         bert_output = self.bert_model(input_ids=input_data['input_ids'].to(device),
                                       # token_type_ids=input_data['token_type_ids'].to(device),
                                       attention_mask=input_data['attention_mask'].to(device))
