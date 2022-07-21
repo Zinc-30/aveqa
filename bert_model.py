@@ -28,15 +28,21 @@ class AVEQA(nn.Module):
         super(AVEQA, self).__init__()
         self.model_name = model_name
         self.tokenizer = BertTokenizer.from_pretrained(self.model_name)
+        self.tokenizer.add_special_tokens({'additional_special_tokens': ["[scinotexp]", "[DOT]"]})
+        #self.tokenizer.add_special_tokens(
+         #   {'additional_special_tokens': ["##0", "##1", "##2", "##3", "##4", "##5", "##6", "##7", "##8", "##9"]})
         self.bert_model = BertModel.from_pretrained(self.model_name)
+        self.bert_model.resize_token_embeddings(len(self.tokenizer))
         # self.bert_model_contextual = BertForQuestionAnswering.from_pretrained(self.model_name)
         self.bert_model_contextual = BertModel.from_pretrained(self.model_name)
-        self.wb = nn.Linear(hidden,1)
-        self.we = nn.Linear(2*hidden,1)
+        self.bert_model_contextual.resize_token_embeddings(len(self.tokenizer))
+        self.wb = nn.Linear(hidden, 1)
+        self.we = nn.Linear(2 * hidden, 1)
         self.hidden = hidden
         self.config = BertConfig.from_pretrained(self.model_name)
         self.classifier = nn.Linear(hidden, 2)
-        self.projector = nn.Linear(hidden, 30522)
+        self.projector = nn.Linear(hidden, len(self.tokenizer))
+        # self.projector = nn.Linear(hidden, 30522)
         self.softmax = nn.Softmax(dim=1)
         self.msk = msk
 
@@ -64,16 +70,16 @@ class AVEQA(nn.Module):
                     if not idx_single:
                         have_idx_list = have_idx_list[0:-1]
                         exception_list.append(index)
-                        idx_begin.append(129)
-                        idx_end.append(129)
+                        idx_begin.append(0)
+                        idx_end.append(0)
                         continue
                     idx_begin.append(idx_single[0])
                     idx_end.append(idx_single[0])
                 else:
                     res_start = self.get_index(token_list, re.sub("#", "", token_list_label[0]))
-                    if not res_start:
-                        print(token_list)
-                        print(token_list_label[0])
+                    # if not res_start:
+                    # print(token_list)
+                    # print(token_list_label[0])
                     res_end = self.get_index(token_list, re.sub("#", "", token_list_label[-1]))
                     if len(res_start) == 1 and len(res_end) == 1:
                         idx_begin.append(res_start[0])
@@ -94,11 +100,11 @@ class AVEQA(nn.Module):
                                 break
                         if not mark:
                             exception_list.append(index)
-                            idx_begin.append(129)
-                            idx_end.append(129)
+                            idx_begin.append(0)
+                            idx_end.append(0)
             else:
-                idx_begin.append(129)
-                idx_end.append(129)
+                idx_begin.append(0)
+                idx_end.append(0)
         # contextual_output_whole = self.bert_model_contextual(input_ids=input_data['input_ids_msk'].to(device),
         #                                                      # token_type_ids=input_data['token_type_ids'].to(device),
         #                                                      attention_mask=input_data['attention_mask_msk'].to(device),
@@ -106,13 +112,14 @@ class AVEQA(nn.Module):
         #                                                      end_positions=torch.LongTensor(idx_end).to(device),
         #                                                      output_hidden_states=True)
         contextual_outputs = self.bert_model_contextual(input_ids=input_data['input_ids_msk'].to(device),
-                                                             # token_type_ids=input_data['token_type_ids'].to(device),
-                                                             attention_mask=input_data['attention_mask_msk'].to(device))
+                                                        # token_type_ids=input_data['token_type_ids'].to(device),
+                                                        attention_mask=input_data['attention_mask_msk'].to(device))
         contextual_output = contextual_outputs.last_hidden_state
 
         # ==== compute qa index ====
-        start_logits  = self.wb(contextual_output)
+        start_logits = self.wb(contextual_output)
         start_logits = start_logits.squeeze(-1).contiguous()
+        # print(start_logits.size())
         answer_start_index = start_logits.argmax(dim=-1)
 
         # generate start hidden embedding
@@ -120,25 +127,26 @@ class AVEQA(nn.Module):
         token_size = contextual_output.size(1)
         emb_size = contextual_output.size(2)
 
-        start_index = answer_start_index.unsqueeze(1).expand(batch_size,token_size)
-        end_contextual_size = [batch_size,token_size,2*emb_size]
+        start_index = answer_start_index.unsqueeze(1).expand(batch_size, token_size)
+        end_contextual_size = [batch_size, token_size, 2 * emb_size]
         end_contextual = torch.zeros(end_contextual_size)
         for batch in range(batch_size):
-            hidden_start = contextual_output[batch,start_index[batch],:]
-            end_contextual[batch] = torch.cat([hidden_start,contextual_output[batch]],dim=-1)
-        
-        end_logits = self.we(end_contextual).squeeze(-1).contiguous()
-        end_mask = torch.zeros(batch_size,token_size).bool()
-        
+            hidden_start = contextual_output[batch, start_index[batch], :]
+            end_contextual[batch] = torch.cat([hidden_start, contextual_output[batch]], dim=-1)
+
+        end_logits = self.we(end_contextual.to(device)).squeeze(-1).contiguous()
+        end_mask = torch.zeros(batch_size, token_size).bool().to(device)
+
         for batch in range(batch_size):
             for token in range(token_size):
                 if token >= answer_start_index[batch]:
-                    end_mask[batch,token] = True
+                    end_mask[batch, token] = True
 
         answer_end_index = torch.zeros(answer_start_index.size())
         for batch in range(batch_size):
-            answer_end_index[batch] = token_size - end_mask[batch].sum() + torch.masked_select(end_logits[batch],end_mask[batch]).argmax(dim=-1)
-
+            answer_end_index[batch] = token_size - end_mask[batch].sum() + torch.masked_select(end_logits[batch],
+                                                                                               end_mask[batch]).argmax(
+                dim=-1)
 
         # ==== compute no answer ====
         no_answer = self.classifier(contextual_output[:, 0, :])
@@ -164,17 +172,29 @@ class AVEQA(nn.Module):
             bert_gt = self.flat_output(bert_output.last_hidden_state, have_answer_list, msk_index_converted)
             contextual_prediction = self.flat_output(contextual_output, have_answer_list, msk_index_converted)
 
-        bert_gt_output = self.softmax(self.projector(bert_gt.to(device)))
-        # print(bert_gt_output.size())
-        contextual_prediction_output = self.softmax(self.projector(contextual_prediction.to(device)))
+        if bert_gt.size(-1) == 0 or contextual_prediction.size(-1) == 0:
+            bert_gt_output = bert_gt
+            contextual_prediction_output = contextual_prediction
+            contain_valid_value = 0
+
+        else:
+            bert_gt_output = self.softmax(self.projector(bert_gt.to(device)))
+            # print(bert_gt_output.size())
+            contextual_prediction_output = self.softmax(self.projector(contextual_prediction.to(device)))
+            contain_valid_value = 1
         # print(contextual_prediction_output.size())
+        # print(idx_begin)
+        # print(idx_end)
         return {
+            'contain_valid_value': contain_valid_value,
             'no_answer_output': no_answer.to(device),  #
             'answer_label': input_data['answer_label'],  #
             # 'have_answer_idx': torch.LongTensor(have_answer_list).to(device),
             # 'bert_output': bert_output.last_hidden_state.to(device),
             # 'contextual_output': contextual_output.to(device),
-            'contextual_output_whole': contextual_output_whole,  #
+            # 'contextual_output_whole': contextual_output_whole,  #
+            'start_logit': start_logits.to(device),
+            'end_logit': end_logits.to(device),
             'bert_gt_output': bert_gt_output.to(device),  #
             'contextual_prediction_output': contextual_prediction_output.to(device),  #
             # 'begin_label': input_data['begin_label'][have_answer_list].to(device),
@@ -184,8 +204,8 @@ class AVEQA(nn.Module):
             'pred_end_idx': answer_end_index.to(device),  #
             # 'begin_label_ori': input_data['begin_label'].to(device),
             # 'end_label_ori': input_data['end_label'].to(device),
-            'begin_label_ori': torch.Tensor(idx_begin).to(device),  #
-            'end_label_ori': torch.Tensor(idx_end).to(device)  #
+            'begin_label_ori': torch.Tensor(idx_begin).contiguous().type(torch.int64).to(device),  #
+            'end_label_ori': torch.Tensor(idx_end).contiguous().type(torch.int64).to(device)  #
         }
 
     # total_loss = qa_loss + alpha * dmlm_loss + beta * no_answer_loss

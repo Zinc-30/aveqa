@@ -40,6 +40,9 @@ parser.add_argument('--device', type=str)
 args = parser.parse_args()
 device = args.device
 Tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+#num_list = ["##0", "##1", "##2", "##3", "##4", "##5", "##6", "##7", "##8", "##9"]
+Tokenizer.add_special_tokens({'additional_special_tokens': ["[scinotexp]", "[DOT]"]})
+#Tokenizer.add_special_tokens({'additional_special_tokens': num_list})
 
 
 class CustomTrainer(Trainer):
@@ -78,20 +81,30 @@ class CustomTrainer(Trainer):
                    5: []}
         # have_answer_list = outputs['have_answer_idx'].cpu().tolist()
         no_answer_loss = loss_function_na_loss(outputs['no_answer_output'], inputs['answer_label'])
-        NA_T, NA_F, T, F, y_true, y_pred, _ = compute_metrics(inputs, outputs, 0, 0, 0, 0, [], [],
-                                                              class_dict, gt_dict, True)
-        self.training_metric_dict['Accuracy'].append(T / (T + F))
-        self.training_metric_dict['NA_Accuracy'].append(NA_T / (NA_T + NA_F))
-        dmlm_loss = self.dmlm_loss(outputs['bert_gt_output'],
-                                   outputs['contextual_prediction_output'])
-        # print(pred_end_idx.max())
-        # print(pred_end_idx.min())
-        qa_loss = outputs['contextual_output_whole'].loss
-        total_loss = qa_loss + alpha * dmlm_loss + beta * no_answer_loss
-        # print('got loss')
-
-        return (total_loss, {'pred_begin_idx': outputs['pred_begin_idx'],
-                             'pred_end_idx': outputs['pred_end_idx']}) if return_outputs else total_loss
+        # print(outputs['contain_valid_value'])
+        if outputs['contain_valid_value'] == 1:
+            NA_T, NA_F, T, F, y_true, y_pred, _ = compute_metrics(inputs, outputs, 0, 0, 0, 0, [], [], [], [], [],
+                                                                  class_dict, gt_dict)
+            self.training_metric_dict['Accuracy'].append(T / (T + F))
+            self.training_metric_dict['NA_Accuracy'].append(NA_T / (NA_T + NA_F))
+            dmlm_loss = self.dmlm_loss(outputs['bert_gt_output'],
+                                       outputs['contextual_prediction_output'])
+            # print(pred_end_idx.max())
+            # print(pred_end_idx.min())
+            # qa_loss = outputs['contextual_output_whole'].loss
+            begin_loss = loss_function_begin(outputs['start_logit'],
+                                             outputs['begin_label_ori'])
+            # print(pred_end_idx.max())
+            # print(pred_end_idx.min())
+            end_loss = loss_function_end(outputs['end_logit'], outputs['end_label_ori'])
+            qa_loss = (begin_loss + end_loss) / 2
+            total_loss = qa_loss + alpha * dmlm_loss + beta * no_answer_loss
+            return (total_loss, {'pred_begin_idx': outputs['pred_begin_idx'],
+                                 'pred_end_idx': outputs['pred_end_idx']}) if return_outputs else total_loss
+        else:
+            print('Whole batch null')
+            return (no_answer_loss, {'pred_begin_idx': -1,
+                                     'pred_end_idx': -1}) if return_outputs else no_answer_loss
 
 
 def setup_seed(seed):
@@ -124,8 +137,8 @@ def process_bad_case(gt_begin_idx, gt_end_idx, pred_begin_idx, pred_end_idx, inp
     return bad_case_dict
 
 
-def compute_metrics(inputs, outputs, NA_T, NA_F, T, F, y_true: list, y_pred: list, classfi_dict: dict, gt_dict: dict,
-                    train=False):
+def compute_metrics(inputs, outputs, NA_T, NA_F, T, F, y_true: list, y_pred: list, prec, rec, f1, classfi_dict: dict,
+                    gt_dict: dict):
     bad_case_list = []
     class_label = inputs['class_label'].cpu().tolist()
     input_ids = inputs['input_ids'].cpu().tolist()
@@ -150,37 +163,65 @@ def compute_metrics(inputs, outputs, NA_T, NA_F, T, F, y_true: list, y_pred: lis
         if temp_dict[i] is True:
             if int(pred_no_answer[i]) == 1:
                 if gt_begin_idx[i] == pred_begin_idx[i] and gt_end_idx[i] == pred_end_idx[i]:
+                    prec.append(1.0)
+                    rec.append(1.0)
+                    f1.append(1.0)
                     y_pred.append(class_label[i])
+                    '''
                     classfi_dict[int(class_label[i])].append(1)
                     gt_dict[int(class_label[i])].append(1)
                     for k0 in range(6):
                         if k0 != int(class_label[i]):
                             classfi_dict[k0].append(0)
                             gt_dict[k0].append(0)
+                    '''
                     T += 1
                 else:
+                    y_pred.append(11957)
+                    pred_span = set(
+                        range(int(min(pred_begin_idx[i], pred_end_idx[i])),
+                              int(max(pred_begin_idx[i], pred_end_idx[i])) + 1))
+                    gt_span = set(
+                        range(int(min(gt_begin_idx[i], gt_end_idx[i])),
+                              int(max(gt_begin_idx[i], gt_end_idx[i])) + 1))
+                    common = pred_span.intersection(gt_span)
+                    p = len(common) / len(pred_span)
+                    # print(pred_span)
+                    # print(pred_begin_idx[i])
+                    # print(pred_end_idx[i])
+                    r = len(common) / len(gt_span)
+                    prec.append(p)
+                    rec.append(r)
+                    f1.append((p + r) / 2)
+
+                    '''
                     gt_dict[int(class_label[i])].append(1)
-                    y_pred.append(6)
                     for k1 in range(6):
                         classfi_dict[k1].append(0)
                         if k1 != int(class_label[i]):
                             gt_dict[k1].append(0)
-                    if not train:
-                        bad_case_list.append(
-                            process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
-                                             input_ids[i],
-                                             input_ids_label[i]))
+                    '''
+                    bad_case_list.append(
+                        process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
+                                         input_ids[i],
+                                         input_ids_label[i]))
+
                     F += 1
             else:
-                y_pred.append(5)
+                y_pred.append(0)
+                prec.append(1.0)
+                rec.append(1.0)
+                f1.append(1.0)
                 T += 1
         else:
-            y_pred.append(5)
-            if not train:
-                bad_case_list.append(
-                    process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
-                                     input_ids[i],
-                                     input_ids_label[i]))
+            y_pred.append(0)
+            prec.append(0.0)
+            rec.append(0.0)
+            f1.append(0.0)
+            bad_case_list.append(
+                process_bad_case(gt_begin_idx[i], gt_end_idx[i], pred_begin_idx[i], pred_end_idx[i],
+                                 input_ids[i],
+                                 input_ids_label[i]))
             F += 1
     return NA_T, NA_F, T, F, y_true, y_pred, bad_case_list
 
@@ -220,7 +261,7 @@ def start_train(train_set, model, training_config):
         # logging_strategy="steps",
         # save_strategy='steps',
         save_steps=5000,
-        save_total_limit=3,
+        save_total_limit=1,
         seed=training_config['seed'],
         logging_dir='./log',
         # label_names=['msk_index']
@@ -239,7 +280,7 @@ def start_train(train_set, model, training_config):
         file.write(json.dumps(trainer.training_metric_dict, indent=4))
 
 
-def start_test(model, test_dataset):
+def start_test(model, test_dataset, training_config):
     T, F = 0, 0
     NA_T, NA_F = 0, 0
     bad_case_list_total = []
@@ -258,17 +299,20 @@ def start_test(model, test_dataset):
 
     dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     y_true, y_pred = [], []
+    prec, rec, f1 = [], [], []
     for i, batch in enumerate(tqdm.tqdm(dataloader)):
         outputs = model(batch, 'cuda')
         NA_T, NA_F, T, F, y_true, y_pred, bad_case_list = compute_metrics(batch, outputs, NA_T, NA_F, T, F, y_true,
-                                                                          y_pred, class_dict, gt_dict)
+                                                                          y_pred, prec, rec, f1, class_dict, gt_dict)
         bad_case_list_total += bad_case_list
+    print('New metric: Precision: {}, Recall: {}, F1: {}'.format(prec, rec, f1))
     precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
 
     print('Accuracy: {}, No Answer Accuracy: {}, Precision: {}, Recall: {}, F1: {}'.format(T / (T + F),
                                                                                            NA_T / (NA_T + NA_F),
                                                                                            precision, recall, f1))
 
+    '''
     precision_bn, recall_bn, f1_bn, _ = precision_recall_fscore_support(class_dict[0], gt_dict[0])
     print('Brand name: \n Precision: {}, Recall: {}, F1: {}'.format(precision_bn, recall_bn, f1_bn))
 
@@ -280,8 +324,8 @@ def start_test(model, test_dataset):
 
     precision_ca, recall_ca, f1_ca, _ = precision_recall_fscore_support(class_dict[3], gt_dict[3])
     print('Category: \n Precision: {}, Recall: {}, F1: {}'.format(precision_ca, recall_ca, f1_ca))
-
-    with open('./bad_case.json', 'w') as file:
+    '''
+    with open(training_config['model_output_dir'] + '/bad_case.json', 'w') as file:
         file.write(json.dumps(bad_case_list_total, indent=4))
 
 
@@ -312,5 +356,5 @@ if __name__ == '__main__':
     start_train(train_dataset, model, training_config)
     torch.save(model.bert_model_contextual.state_dict(), training_config['model_output_dir'] + '/bert_state_dict')
     model.eval()
-    start_test(model, test_dataset)
-    print('Using model: {}'.format(training_config['model_name']))
+    start_test(model, test_dataset, training_config)
+    print('Using model: {}, {}'.format(training_config['model_name'], training_config['model_output_dir']))
