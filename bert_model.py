@@ -29,8 +29,8 @@ class AVEQA(nn.Module):
         self.model_name = model_name
         self.tokenizer = BertTokenizer.from_pretrained(self.model_name)
         self.tokenizer.add_special_tokens({'additional_special_tokens': ["[scinotexp]", "[DOT]"]})
-        #self.tokenizer.add_special_tokens(
-         #   {'additional_special_tokens': ["##0", "##1", "##2", "##3", "##4", "##5", "##6", "##7", "##8", "##9"]})
+        # self.tokenizer.add_special_tokens(
+        #   {'additional_special_tokens': ["##0", "##1", "##2", "##3", "##4", "##5", "##6", "##7", "##8", "##9"]})
         self.bert_model = BertModel.from_pretrained(self.model_name)
         self.bert_model.resize_token_embeddings(len(self.tokenizer))
         # self.bert_model_contextual = BertForQuestionAnswering.from_pretrained(self.model_name)
@@ -162,9 +162,14 @@ class AVEQA(nn.Module):
         # print(have_answer_list)
         # print(msk_index_converted)
         if self.msk == 'attribute' and self.training:
+            msk_index_raw = (input_data['input_ids_msk'] == 103).nonzero()
             msk_index_converted = []
-            for label_idx in input_data['attribute_word_label'].cpu().tolist():
-                msk_index_converted.append([i for i in range(label_idx[0], label_idx[1])])
+            for row_idx, idx_pair in enumerate(msk_index_raw.cpu().tolist()):
+                if row_idx != idx_pair[0]:
+                    print('Error in MASK index per row!')
+                msk_index_converted.append([idx_pair[2]])
+            # for label_idx in input_data['attribute_word_label'].cpu().tolist():
+            #   msk_index_converted.append([i for i in range(label_idx[0], label_idx[1])])
             have_answer_list_inp = [i for i in range(pred_label.size(0))]
             bert_gt = self.flat_output(bert_output.last_hidden_state, have_answer_list_inp, msk_index_converted)
             contextual_prediction = self.flat_output(contextual_output, have_answer_list_inp, msk_index_converted)

@@ -7,6 +7,7 @@ from transformers import BertTokenizer
 import argparse
 import json
 import re
+from random import *
 
 
 def number_repl(matchobj):
@@ -92,6 +93,23 @@ class AEPub(Dataset):
         # print(list(item.keys()))
         return item
 
+    def add_msk(self, text_word, begin_label, end_label):
+        if isinstance(text_word, str):
+            text_word_list = text_word.split()
+        else:
+            text_word_list = text_word
+        # print('{} {} {}'.format(begin_label, end_label, len(text_word_list)))
+        msk_idx = randint(0, len(text_word_list) - 1)
+        count = 0
+        while int(begin_label) <= msk_idx <= int(end_label):
+            count += 1
+            msk_idx = randint(0, len(text_word_list) - 1)
+            if count == 100:
+                print('{} {} {}'.format(begin_label, end_label, len(text_word_list)))
+                break
+        text_word_list[msk_idx] = '[MASK]'
+        return ' '.join(text_word_list)
+
     def read_txt(self, dataset_path: str, msk: str = 'value'):
         dataset, text, text_msk, cat_text_msk, attribute, label, msk_id_list, cat_text = [], [], [], [], [], [], [], []
         answer_label, begin_label, end_label, attribute_word_label = [], [], [], []
@@ -142,17 +160,19 @@ class AEPub(Dataset):
                                         idx_result.append(idx + 1)
                         idx_result = list(set(idx_result))[:len(label_words_list)]
                         msk_idx = [str(w) for w in idx_result]
+                        '''
                         for i in idx_result:
                             str_line_word_list[i] = '[MASK]'
+                        '''
                     else:
                         idx_result = idx_candidate[0]
                         msk_idx.append(str(idx_result[0]))
-                        str_line_word_list[idx_result[0]] = '[MASK]'
+                        # str_line_word_list[idx_result[0]] = '[MASK]'
                 else:
                     class_label.append(5)
                     answer_label.append(0)
                     msk_idx = ['-1']
-                str_line_word_msk = ' '.join(str_line_word_list)
+                # str_line_word_msk = ' '.join(str_line_word_list)
                 if len(msk_idx) > 1:
                     b = int(msk_idx[0])
                     e = int(msk_idx[-1])
@@ -167,13 +187,13 @@ class AEPub(Dataset):
                     e = int(msk_idx[-1])
                     begin_label.append(b)
                     end_label.append(b)
-                    str_line_word_msk = apply_scientific_notation(str_line[0])
                 else:
                     # print(msk_idx)
                     b = int(msk_idx[0])
                     e = int(msk_idx[-1])
                     begin_label.append(b)
                     end_label.append(b)
+                str_line_word_msk = self.add_msk(str_line_word_list, b, e)
                 dataset.append({
                     'text': apply_scientific_notation(str_line[0]),
                     'text_msk': str_line_word_msk,
@@ -190,10 +210,7 @@ class AEPub(Dataset):
                 })
                 text.append(apply_scientific_notation(str_line[0]))
                 text_msk.append(str_line_word_msk)
-                if msk == 'attribute':
-                    cat_text_msk.append(apply_scientific_notation(str_line[0]) + ' [MASK]')
-                else:
-                    cat_text_msk.append(str_line_word_msk + ' ' + str_line[1])
+                cat_text_msk.append(str_line_word_msk + ' [SEP] ' + str_line[1])
                 attribute.append(str_line[1])
                 label.append(apply_scientific_notation(str_line[2].strip()))
                 msk_id_list.append('|'.join(msk_idx))
@@ -215,7 +232,7 @@ if __name__ == '__main__':
     Tokenizer = BertTokenizer.from_pretrained(training_config['model_name'])
     Tokenizer.add_special_tokens({'additional_special_tokens': ["[scinotexp]", "[DOT]"]})
     print('encode: sci')
-    print(Tokenizer('scinotexp'))
+    print(Tokenizer('[scinotexp] [MASK]'))
     print(len(Tokenizer))
     aePub = AEPub(dataset_path, Tokenizer, msk='value')
     torch.save(aePub, training_config['dataset'])
